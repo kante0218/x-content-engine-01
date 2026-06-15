@@ -140,29 +140,49 @@ def polish(draft: str, length: str | None = None) -> str:
         raise RuntimeError(".env に ANTHROPIC_API_KEY が未設定")
 
     limit = _max_chars()
-    label, length_instruction = _length_instruction(length)
-    emoji_instruction = _emoji_instruction()
-    user_msg = (
-        "以下のドラフトをXに投稿する自分のツイートに書き直してください。\n\n"
-        f"{length_instruction}\n\n"
-        f"{emoji_instruction}\n"
-        "---\n"
-        f"{draft}\n"
-        "---"
-    )
-
     client = Anthropic(api_key=api_key)
-    res = client.messages.create(
-        model=MODEL,
-        max_tokens=4096,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": user_msg}],
-    )
-    text = "".join(block.text for block in res.content if block.type == "text").strip()
-    if len(text) > limit:
-        raise RuntimeError(f"推敲結果が{len(text)}文字>{limit}。原文を短くしてリトライしてください")
-    sys.stderr.write(f"[length_mode={label} chars={len(text)} limit={limit}]\n")
-    return text
+
+    # 上限超過は自動でリトライ: 2回目以降は短い長さモードを強制し、明示的に上限を伝える。
+    fallback_lengths = [None, "中長文", "中文"] if limit > 300 else [None, "中文", "短文"]
+    if length is not None:
+        fallback_lengths = [length, "中文", "短文"]
+
+    last_text = ""
+    for attempt, len_mode in enumerate(fallback_lengths, start=1):
+        try:
+            label, length_instruction = _length_instruction(len_mode)
+        except ValueError:
+            label, length_instruction = _length_instruction(None)
+        emoji_instruction = _emoji_instruction()
+        over_note = ""
+        if attempt > 1:
+            over_note = (
+                f"\n# 重要(前回オーバー)\n- 前回は{len(last_text)}文字で上限{limit}を超えました。"
+                f"今回は**必ず{limit}文字以内**に収めてください。内容を削ってでも短くする。\n"
+            )
+        user_msg = (
+            "以下のドラフトをXに投稿する自分のツイートに書き直してください。\n\n"
+            f"{length_instruction}\n\n"
+            f"{emoji_instruction}"
+            f"{over_note}\n"
+            "---\n"
+            f"{draft}\n"
+            "---"
+        )
+        res = client.messages.create(
+            model=MODEL,
+            max_tokens=4096,
+            system=SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": user_msg}],
+        )
+        text = "".join(block.text for block in res.content if block.type == "text").strip()
+        last_text = text
+        if len(text) <= limit:
+            sys.stderr.write(f"[length_mode={label} chars={len(text)} limit={limit} attempt={attempt}]\n")
+            return text
+        sys.stderr.write(f"[over limit] {len(text)}>{limit} (attempt={attempt}/{len(fallback_lengths)}) → 短く再推敲\n")
+
+    raise RuntimeError(f"推敲結果が{len(last_text)}文字>{limit}。{len(fallback_lengths)}回試しても収まりませんでした")
 
 
 def main() -> int:

@@ -1,12 +1,14 @@
 name: auto-post
 
 # 髙橋敢輝(@kante0123) 自動投稿。Macが動いていなくてもGitHubのクラウドで実行する。
-# 投稿時刻(JST 08:00 / 20:00)を UTC に変換して指定。
+# 投稿時刻(JST 08:00 / 12:30 / 17:00 / 21:00)を UTC に変換して指定。
 # cron は UTC。GitHub Actions のcronは数分〜十数分遅延することがある(許容)。
 on:
   schedule:
     - cron: "0 23 * * *"    # 08:00 JST
-    - cron: "0 11 * * *"    # 20:00 JST
+    - cron: "30 3 * * *"    # 12:30 JST
+    - cron: "0 8 * * *"     # 17:00 JST
+    - cron: "0 12 * * *"    # 21:00 JST
   workflow_dispatch:        # 手動テスト用
     inputs:
       dry_run:
@@ -46,7 +48,7 @@ jobs:
           X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
           X_ACCESS_TOKEN_SECRET: ${{ secrets.X_ACCESS_TOKEN_SECRET }}
           X_HANDLE: kante0123
-          X_MAX_CHARS: ${{ vars.X_MAX_CHARS || '280' }}
+          X_MAX_CHARS: ${{ vars.X_MAX_CHARS || '900' }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           X_LIVE_POST: ${{ github.event.inputs.dry_run == 'true' && 'false' || 'true' }}
         run: python scripts/pipeline.py

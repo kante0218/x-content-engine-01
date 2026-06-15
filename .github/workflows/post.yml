@@ -1,18 +1,37 @@
 name: auto-post
 
 # 髙橋敢輝(@kante0123) 自動投稿。Macが動いていなくてもGitHubのクラウドで実行する。
-# 投稿時刻(JST 08:00 / 12:30 / 17:00 / 21:00)を UTC に変換して指定。
-# cron は UTC。GitHub Actions のcronは数分〜十数分遅延することがある(許容)。
+#
+# ランダム時刻で1日ちょうど4回:
+#   - 1日12個の不規則な候補スロット(下のcron)で起動する。
+#   - 各起動で should_post.py が「投稿するか」をリザーバ方式で確率判定し、
+#     合計がちょうど X_DAILY_TARGET(=4) 回になるよう、当たるスロットを毎日ランダムに散らす。
+#   - 投稿が確定した回だけ、さらに0〜8分のランダム遅延を入れて分単位でも時刻をばらす。
+#   - 投稿しない回は即終了するので、GitHub Actionsの実行時間はほとんど消費しない。
+#
+# cronはUTC。下のコメントはJST。should_post.py の SLOTS_JST と必ず同期すること。
 on:
   schedule:
-    - cron: "0 23 * * *"    # 08:00 JST
-    - cron: "30 3 * * *"    # 12:30 JST
-    - cron: "0 8 * * *"     # 17:00 JST
-    - cron: "0 12 * * *"    # 21:00 JST
+    - cron: "50 22 * * *"   # 07:50 JST
+    - cron: "5 0 * * *"     # 09:05 JST
+    - cron: "20 1 * * *"    # 10:20 JST
+    - cron: "40 2 * * *"    # 11:40 JST
+    - cron: "55 3 * * *"    # 12:55 JST
+    - cron: "15 5 * * *"    # 14:15 JST
+    - cron: "30 6 * * *"    # 15:30 JST
+    - cron: "50 7 * * *"    # 16:50 JST
+    - cron: "10 9 * * *"    # 18:10 JST
+    - cron: "25 10 * * *"   # 19:25 JST
+    - cron: "40 11 * * *"   # 20:40 JST
+    - cron: "55 12 * * *"   # 21:55 JST
   workflow_dispatch:        # 手動テスト用
     inputs:
       dry_run:
         description: "true なら生成のみで投稿しない(検証用)"
+        type: boolean
+        default: false
+      force:
+        description: "true ならスロット確率判定を無視して必ず投稿する(手動用)"
         type: boolean
         default: false
 
@@ -21,7 +40,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write           # 投稿履歴(dedup用)を commit back するため
+  contents: write           # 投稿履歴(dedup/日次カウント用)を commit back するため
 
 jobs:
   post:
@@ -36,12 +55,35 @@ jobs:
       - name: Install deps
         run: pip install anthropic python-dotenv requests-oauthlib requests
 
+      - name: Decide whether to post this slot
+        id: gate
+        env:
+          X_DAILY_TARGET: "4"
+        run: |
+          if [ "${{ github.event.inputs.force }}" = "true" ]; then
+            echo "force=true → 判定スキップして投稿"
+            echo "go=true" >> "$GITHUB_OUTPUT"
+          elif python scripts/should_post.py; then
+            echo "go=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "go=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Random minute jitter (only when posting)
+        if: steps.gate.outputs.go == 'true'
+        run: |
+          J=$(( RANDOM % 481 ))   # 0〜8分
+          echo "sleep ${J}s (~$(( J / 60 ))min) で分単位の時刻をばらす"
+          sleep "$J"
+
       - name: Generate draft
+        if: steps.gate.outputs.go == 'true'
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: python scripts/generate_draft.py
 
       - name: Polish & post pending
+        if: steps.gate.outputs.go == 'true'
         env:
           X_CONSUMER_KEY: ${{ secrets.X_CONSUMER_KEY }}
           X_CONSUMER_SECRET: ${{ secrets.X_CONSUMER_SECRET }}
@@ -53,7 +95,7 @@ jobs:
           X_LIVE_POST: ${{ github.event.inputs.dry_run == 'true' && 'false' || 'true' }}
         run: python scripts/pipeline.py
 
-      - name: Persist post history (dedup state)
+      - name: Persist post history (dedup & daily count state)
         if: always()
         run: |
           git config user.name "github-actions[bot]"

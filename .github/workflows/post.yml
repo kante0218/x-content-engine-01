@@ -1,0 +1,65 @@
+name: auto-post
+
+# 髙橋敢輝(@kante0123) 自動投稿。Macが動いていなくてもGitHubのクラウドで実行する。
+# 投稿時刻(JST 08:00 / 20:00)を UTC に変換して指定。
+# cron は UTC。GitHub Actions のcronは数分〜十数分遅延することがある(許容)。
+on:
+  schedule:
+    - cron: "0 23 * * *"    # 08:00 JST
+    - cron: "0 11 * * *"    # 20:00 JST
+  workflow_dispatch:        # 手動テスト用
+    inputs:
+      dry_run:
+        description: "true なら生成のみで投稿しない(検証用)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: auto-post          # 多重起動による二重投稿を防止
+  cancel-in-progress: false
+
+permissions:
+  contents: write           # 投稿履歴(dedup用)を commit back するため
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: pip install anthropic python-dotenv requests-oauthlib requests
+
+      - name: Generate draft
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python scripts/generate_draft.py
+
+      - name: Polish & post pending
+        env:
+          X_CONSUMER_KEY: ${{ secrets.X_CONSUMER_KEY }}
+          X_CONSUMER_SECRET: ${{ secrets.X_CONSUMER_SECRET }}
+          X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
+          X_ACCESS_TOKEN_SECRET: ${{ secrets.X_ACCESS_TOKEN_SECRET }}
+          X_HANDLE: kante0123
+          X_MAX_CHARS: ${{ vars.X_MAX_CHARS || '280' }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          X_LIVE_POST: ${{ github.event.inputs.dry_run == 'true' && 'false' || 'true' }}
+        run: python scripts/pipeline.py
+
+      - name: Persist post history (dedup state)
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A drafts/posted drafts/pending logs/*.json 2>/dev/null || true
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: persist post state [skip ci]"
+            git push
+          else
+            echo "no state change to commit"
+          fi

@@ -52,9 +52,24 @@ def slots_remaining(now: dt.datetime) -> int:
     return sum(1 for h, m in SLOTS_JST if h * 60 + m >= cutoff_min)
 
 
+def daily_target(today: dt.date, base: int) -> int:
+    """1日の投稿数を base-1 〜 base+1 でゆらす(bot感を消す)。
+
+    日付から決定的に決めるので、その日の全スロットで必ず同じ値になり、
+    リザーバ判定が破綻しない(乱数だとスロット間で目標がブレてしまう)。
+    """
+    x = (today.toordinal() * 2654435761) & 0xFFFFFFFF  # Knuth乗算でビットを撹拌
+    x ^= x >> 16
+    x = (x * 2246822519) & 0xFFFFFFFF
+    x ^= x >> 13
+    spread = x % 3  # 0,1,2 を日替わりで決定的に
+    return max(1, base - 1 + spread)
+
+
 def main() -> int:
-    target = int(os.getenv("X_DAILY_TARGET", "4"))
+    base = int(os.getenv("X_DAILY_TARGET", "4"))
     now = dt.datetime.now(JST)
+    target = daily_target(now.date(), base)
     done = posted_today(now.date())
     needed = target - done
     remaining = max(slots_remaining(now), 1)

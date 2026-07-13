@@ -81,6 +81,7 @@ jobs:
         if: steps.gate.outputs.go == 'true'
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python scripts/generate_draft.py
 
       - name: Polish & post pending
@@ -94,6 +95,7 @@ jobs:
           X_MAX_CHARS: ${{ vars.X_MAX_CHARS || '900' }}
           X_REPLY_THREAD_RATE: ${{ vars.X_REPLY_THREAD_RATE || '0.4' }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           X_LIVE_POST: ${{ github.event.inputs.dry_run == 'true' && 'false' || 'true' }}
         run: python scripts/pipeline.py
 

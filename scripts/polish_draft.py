@@ -16,7 +16,7 @@ import random
 import sys
 from pathlib import Path
 
-from llm_gemini import Anthropic
+from anthropic import Anthropic
 from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -205,7 +205,7 @@ def polish(draft: str, length: str | None = None, comment_cta: bool = False) -> 
     draft = draft.strip()
     if not draft:
         raise ValueError("空のドラフトは推敲できません")
-    api_key = os.getenv("GEMINI_API_KEY") or os.getenv("ANTHROPIC_API_KEY")
+    api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY が未設定(https://aistudio.google.com/apikey で無料発行)")
 
@@ -281,7 +281,7 @@ REPLY_SYSTEM = """あなたは「髙橋敢輝(@kante0123)」本人。
 
 def generate_reply(main_text: str, draft: str) -> str:
     """投稿済み本ツイートにぶら下げる『コメ欄の続き』リプ本文を生成する。"""
-    api_key = os.getenv("GEMINI_API_KEY") or os.getenv("ANTHROPIC_API_KEY")
+    api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY が未設定(https://aistudio.google.com/apikey で無料発行)")
     limit = _max_chars()
